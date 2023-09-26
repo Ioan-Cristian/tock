@@ -12,22 +12,24 @@ use kernel::platform::chip::InterruptService;
 use crate::dma;
 use crate::nvic;
 
+use crate::chip_specific::chip_specs::ChipSpecs as ChipSpecsTrait;
+
 pub struct Stm32f4xx<'a, I: InterruptService + 'a> {
     mpu: cortexm4::mpu::MPU,
     userspace_kernel_boundary: cortexm4::syscall::SysCall,
     interrupt_service: &'a I,
 }
 
-pub struct Stm32f4xxDefaultPeripherals<'a> {
+pub struct Stm32f4xxDefaultPeripherals<'a, ChipSpecs> {
     pub adc1: crate::adc::Adc<'a>,
     pub dma1_streams: [crate::dma::Stream<'a, dma::Dma1<'a>>; 8],
     pub dma2_streams: [crate::dma::Stream<'a, dma::Dma2<'a>>; 8],
     pub exti: &'a crate::exti::Exti<'a>,
-    pub flash: crate::flash::Flash,
+    pub flash: crate::flash::Flash<ChipSpecs>,
     pub fsmc: crate::fsmc::Fsmc<'a>,
     pub gpio_ports: crate::gpio::GpioPorts<'a>,
     pub i2c1: crate::i2c::I2C<'a>,
-    pub clocks: crate::clocks::Clocks<'a>,
+    pub clocks: crate::clocks::Clocks<'a, ChipSpecs>,
     pub spi3: crate::spi::Spi<'a>,
     pub tim2: crate::tim2::Tim2<'a>,
     pub usart1: crate::usart::Usart<'a, dma::Dma2<'a>>,
@@ -35,7 +37,7 @@ pub struct Stm32f4xxDefaultPeripherals<'a> {
     pub usart3: crate::usart::Usart<'a, dma::Dma1<'a>>,
 }
 
-impl<'a> Stm32f4xxDefaultPeripherals<'a> {
+impl<'a, ChipSpecs: ChipSpecsTrait> Stm32f4xxDefaultPeripherals<'a, ChipSpecs> {
     pub fn new(
         rcc: &'a crate::rcc::Rcc,
         exti: &'a crate::exti::Exti<'a>,
@@ -90,7 +92,9 @@ impl<'a> Stm32f4xxDefaultPeripherals<'a> {
     }
 }
 
-impl<'a> InterruptService for Stm32f4xxDefaultPeripherals<'a> {
+impl<'a, ChipSpecs: ChipSpecsTrait> InterruptService
+    for Stm32f4xxDefaultPeripherals<'a, ChipSpecs>
+{
     unsafe fn service_interrupt(&self, interrupt: u32) -> bool {
         match interrupt {
             nvic::DMA1_Stream1 => self.dma1_streams

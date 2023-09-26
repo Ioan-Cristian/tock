@@ -4,9 +4,6 @@
 //
 // Author: Ioan-Cristian CÎRSTEA <ioan.cirstea@oxidos.io>
 
-#![deny(dead_code)]
-#![deny(missing_docs)]
-#![deny(unused_imports)]
 //! STM32F4xx clock driver
 //!
 //! This crate provides drivers for various clocks: HSI, PLL, system, AHB, APB1 and APB2.
@@ -157,9 +154,7 @@
 //!
 //! [^usage_note]: For the purpose of brevity, any error checking has been removed.
 
-use crate::chip_specific::clock_constants::APB1_FREQUENCY_LIMIT_MHZ;
-use crate::chip_specific::clock_constants::APB2_FREQUENCY_LIMIT_MHZ;
-use crate::chip_specific::clock_constants::SYS_CLOCK_FREQUENCY_LIMIT_MHZ;
+use crate::chip_specific::ChipSpecs as ChipSpecsTrait;
 use crate::clocks::hsi::Hsi;
 use crate::clocks::hsi::HSI_FREQUENCY_MHZ;
 use crate::clocks::pll::Pll;
@@ -176,16 +171,16 @@ use kernel::utilities::cells::OptionalCell;
 use kernel::ErrorCode;
 
 /// Main struct for configuring on-board clocks.
-pub struct Clocks<'a> {
+pub struct Clocks<'a, ChipSpecs> {
     rcc: &'a Rcc,
-    flash: OptionalCell<&'a Flash>,
+    flash: OptionalCell<&'a Flash<ChipSpecs>>,
     /// High speed internal clock
     pub hsi: Hsi<'a>,
     /// Main phase loop-lock clock
-    pub pll: Pll<'a>,
+    pub pll: Pll<'a, ChipSpecs>,
 }
 
-impl<'a> Clocks<'a> {
+impl<'a, ChipSpecs: ChipSpecsTrait> Clocks<'a, ChipSpecs> {
     // The constructor must be called when the default peripherals are created
     pub(crate) fn new(rcc: &'a Rcc) -> Self {
         Self {
@@ -197,7 +192,7 @@ impl<'a> Clocks<'a> {
     }
 
     // This method should be called when the dependencies are resolved
-    pub(crate) fn set_flash(&self, flash: &'a Flash) {
+    pub(crate) fn set_flash(&self, flash: &'a Flash<ChipSpecs>) {
         self.flash.set(flash);
     }
 
@@ -249,7 +244,8 @@ impl<'a> Clocks<'a> {
     // hypothetical future frequency.
     fn check_apb1_frequency_limit(&self, ahb_frequency_mhz: usize) -> bool {
         ahb_frequency_mhz
-            <= APB1_FREQUENCY_LIMIT_MHZ * Into::<usize>::into(self.rcc.get_apb1_prescaler())
+            <= ChipSpecs::APB1_FREQUENCY_LIMIT_MHZ
+                * Into::<usize>::into(self.rcc.get_apb1_prescaler())
     }
 
     /// Set the APB1 prescaler.
@@ -264,7 +260,7 @@ impl<'a> Clocks<'a> {
     pub fn set_apb1_prescaler(&self, prescaler: APBPrescaler) -> Result<(), ErrorCode> {
         let ahb_frequency = self.get_ahb_frequency();
         let divider: usize = prescaler.into();
-        if ahb_frequency / divider > APB1_FREQUENCY_LIMIT_MHZ {
+        if ahb_frequency / divider > ChipSpecs::APB1_FREQUENCY_LIMIT_MHZ {
             return Err(ErrorCode::FAIL);
         }
 
@@ -294,7 +290,8 @@ impl<'a> Clocks<'a> {
     // Same as for APB1, APB2 has a frequency limit that must be enforced by software
     fn check_apb2_frequency_limit(&self, ahb_frequency_mhz: usize) -> bool {
         ahb_frequency_mhz
-            <= APB2_FREQUENCY_LIMIT_MHZ * Into::<usize>::into(self.rcc.get_apb2_prescaler())
+            <= ChipSpecs::APB2_FREQUENCY_LIMIT_MHZ
+                * Into::<usize>::into(self.rcc.get_apb2_prescaler())
     }
 
     /// Set the APB2 prescaler.
@@ -309,7 +306,7 @@ impl<'a> Clocks<'a> {
     pub fn set_apb2_prescaler(&self, prescaler: APBPrescaler) -> Result<(), ErrorCode> {
         let current_ahb_frequency = self.get_ahb_frequency();
         let divider: usize = prescaler.into();
-        if current_ahb_frequency / divider > APB2_FREQUENCY_LIMIT_MHZ {
+        if current_ahb_frequency / divider > ChipSpecs::APB2_FREQUENCY_LIMIT_MHZ {
             return Err(ErrorCode::FAIL);
         }
 
@@ -369,7 +366,7 @@ impl<'a> Clocks<'a> {
         };
 
         // Check the alternate frequency is not higher than the system clock limit
-        if alternate_frequency > SYS_CLOCK_FREQUENCY_LIMIT_MHZ {
+        if alternate_frequency > ChipSpecs::SYS_CLOCK_FREQUENCY_LIMIT_MHZ {
             return Err(ErrorCode::SIZE);
         }
 
@@ -562,7 +559,7 @@ pub mod tests {
     ))]
     const HIGH_FREQUENCY: usize = 80;
 
-    fn set_default_configuration(clocks: &Clocks) {
+    fn set_default_configuration<ChipSpecs: ChipSpecsTrait>(clocks: &Clocks<ChipSpecs>) {
         assert_eq!(Ok(()), clocks.set_sys_clock_source(SysClockSource::HSI));
         assert_eq!(Ok(()), clocks.pll.disable());
         assert_eq!(Ok(()), clocks.set_ahb_prescaler(AHBPrescaler::DivideBy1));
@@ -604,8 +601,8 @@ pub mod tests {
     /// ```rust,ignore
     /// clocks::test::test_prescalers(&peripherals.stm32f4.clocks);
     /// ```
-    pub fn test_prescalers(clocks: &Clocks) {
-        // This test requires a bit of setup. A system clock running at 160MHz is configured.
+    pub fn test_prescalers<ChipSpecs: ChipSpecsTrait>(clocks: &Clocks<ChipSpecs>) {
+        // This test requires a bit of setup. A system clock running at HIGH_FREQUENCY is configured.
         check_and_panic!(Ok(()), clocks.pll.set_frequency(HIGH_FREQUENCY), clocks);
         check_and_panic!(Ok(()), clocks.pll.enable(), clocks);
         check_and_panic!(
@@ -695,7 +692,7 @@ pub mod tests {
     /// ```rust,ignore
     /// clocks::test::test_clocks_struct(&peripherals.stm32f4.clocks);
     /// ```
-    pub fn test_clocks_struct(clocks: &Clocks) {
+    pub fn test_clocks_struct<ChipSpecs: ChipSpecsTrait>(clocks: &Clocks<ChipSpecs>) {
         debug!("");
         debug!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
         debug!("Testing clocks struct...");
@@ -870,7 +867,7 @@ pub mod tests {
     /// ```rust,ignore
     /// clocks::test::test_mco(&peripherals.stm32f4.clocks);
     /// ```
-    pub fn test_mco(clocks: &Clocks) {
+    pub fn test_mco<ChipSpecs: ChipSpecsTrait>(clocks: &Clocks<ChipSpecs>) {
         debug!("");
         debug!("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
         debug!("Testing MCOs...");
@@ -908,7 +905,7 @@ pub mod tests {
     }
 
     /// Run the entire test suite for all clocks
-    pub fn run_all(clocks: &Clocks) {
+    pub fn run_all<ChipSpecs: ChipSpecsTrait>(clocks: &Clocks<ChipSpecs>) {
         debug!("");
         debug!("===============================================");
         debug!("Testing clocks...");

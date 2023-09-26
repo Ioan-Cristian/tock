@@ -4,9 +4,6 @@
 //
 // Author: Ioan-Cristian CÎRSTEA <ioan.cirstea@oxidos.io>
 
-#![deny(dead_code)]
-#![deny(missing_docs)]
-#![deny(unused_imports)]
 //! HSI (high-speed internal) clock driver for the STM32F4xx family. [^doc_ref]
 //!
 //! # Usage
@@ -107,7 +104,7 @@ impl<'a> Hsi<'a> {
         self.rcc.disable_hsi_clock();
 
         for _ in 0..10 {
-            if self.rcc.is_ready_hsi_clock() == false {
+            if !self.rcc.is_ready_hsi_clock() {
                 return Ok(());
             }
         }
@@ -179,7 +176,7 @@ pub mod tests {
         debug!("Testing HSI...");
 
         // By default, the HSI clock is enabled
-        assert_eq!(true, hsi.is_enabled());
+        assert!(hsi.is_enabled());
 
         // HSI frequency is 16MHz
         assert_eq!(Some(HSI_FREQUENCY_MHZ), hsi.get_frequency());
